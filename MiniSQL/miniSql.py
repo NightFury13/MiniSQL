@@ -4,11 +4,13 @@
 # @Email  : develop13mohit@gmail.com #
 ######################################
 
+# Library imports
 import os
 import sys
 from termcolor import colored, cprint
 import json
 import csv
+import sqlparse
 
 def fetchFiles(path):
     """
@@ -56,7 +58,7 @@ def loadDatabases(path, data_files):
                     for col in table[2:-1]:
                         meta_tables[t_name][col] = []
             print 
-            print colored("> Database Schema : ","yellow")
+            print colored("> Database Schema : ","cyan")
             print colored(json.dumps(meta_tables,sort_keys=True, indent=4),'cyan')
 
             # Fill the data values
@@ -71,16 +73,41 @@ def loadDatabases(path, data_files):
                         for row in contents:
                             for col in meta_tables[t_name]:
                                 meta_tables[t_name][col].append(int(row[header.index(col)]))
+            print colored("\n[INFO]",'green'),"Loading data values complete.\n"
             return meta_tables
         except:
-            print "[ERROR] Metadata file maybe corrupt! Format mismatch."
+            print colored("[ERROR]",'red'),"Metadata file maybe corrupt! Format mismatch."
             return "error"
+
+def parseQuery(query):
+    """
+    Parse the query and return the tokens of query.
+    """
+    tokens = filter(None, [str(x).strip() for x in sqlparse.parse(query)[0].tokens])
+
+    select = [x.strip() for x in tokens[1].split(',')]
+    tables = [x.strip() for x in tokens[3].split(',')]
+    conditions = [x.strip().split(';')[0] for x in '='.join([x.strip() for x in tokens[-1].split('=')]).split(' ')[1:]]
+    print "select", select
+    print "tables", tables
+    print "conditions", conditions
+    return tokens
 
 def startEngine():
     """
     Main controller function for taking query inputs and displaying respective outputs.
     """
-    return 0
+    print colored("MiniSQL>",'cyan'),
+    query = raw_input()
+    while query!='q':
+        tokens = parseQuery(query)
+        print tokens
+ 
+        # Take next query.
+        print colored("MiniSQL>",'cyan'),
+        query = raw_input()
+
+    print colored("Thanks for using MiniSQL. Exiting Now...",'yellow')
 
 def main():
     """
@@ -99,6 +126,9 @@ def main():
         print colored('Review the errors and try again','yellow')
         return 
 
+    print colored("           Welcome to the MiniSQL Engine\n","yellow")
+    print colored("~ Enter your query on the prompt",'yellow')
+    print colored("~ q : Quit\n",'yellow')
     # Start the query engine.
     startEngine()
 
