@@ -130,66 +130,77 @@ def computeQuery(select, tables, conditions, database):
     for table in out_tables:
         if table not in tables:
             output.pop(table, None)
-    if len(conditions)==1:
-        cond = conditions[0]
-        delim = ''
-        if '=' in cond:
-            field, value = cond.split('=')
-            delim = '='
-        elif '>' in cond:
-            field, value = cond.split('>')
-            delim = '>'
-        elif '<' in cond:
-            field, value = cond.split('<')
-            delim = '<'
-        else:
-            print colored("[ERROR]",'red'),"Invalid operator! Only =,>,< are supported."
-            return "error"
+    
+    if ('or' not in conditions) and ('OR' not in conditions):
+        for cond in conditions:
+            if cond=='AND' or cond=='and':
+                continue
+            delim = ''
+            if '=' in cond:
+                field, value = cond.split('=')
+                delim = '='
+            elif '>' in cond:
+                field, value = cond.split('>')
+                delim = '>'
+            elif '<' in cond:
+                field, value = cond.split('<')
+                delim = '<'
+            else:
+                print colored("[ERROR]",'red'),"Invalid operator! Only =,>,< are supported."
+                return "error"
 
-        try:
-            value = int(value)
-        except:
-            print colored("[ERROR]",'red'),'Values can only be integers! Not %s.' % str(value) 
-            return
-        for table in tables:
-            if field in output[table]:
-                del_field = []
-                for i in range(len(output[table][field])):
-                    if delim=='=':
-                        if output[table][field][i] != value:
-                            del_field.append(i)
-                    elif delim=='>':
-                        if output[table][field][i] <= value:
-                            del_field.append(i)
-                    elif delim=='<':
-                        if output[table][field][i] >= value:
-                            del_field.append(i)
-                for i in sorted(del_field, reverse=True):
-                    for field_del in output[table]:
-                        output[table][field_del].remove(output[table][field_del][i])
+            try:
+                value = int(value)
+            except:
+                print colored("[ERROR]",'red'),'Values can only be integers! Not %s.' % str(value) 
+                return "error"
+            for table in tables:
+                if field in output[table]:
+                    del_field = []
+                    for i in range(len(output[table][field])):
+                        if delim=='=':
+                            if output[table][field][i] != value:
+                                del_field.append(i)
+                        elif delim=='>':
+                            if output[table][field][i] <= value:
+                                del_field.append(i)
+                        elif delim=='<':
+                            if output[table][field][i] >= value:
+                                del_field.append(i)
+                    for i in sorted(del_field, reverse=True):
+                        for field_del in output[table]:
+                            output[table][field_del].remove(output[table][field_del][i])
         
     if len(select)==1:
         ele = select[0]
-        field = ele.split('(')[-1].split(')')[0]
-        for table in tables:
-            if field in output[table]:
-                if 'max' in ele:
-                    output[table][field] = [max(output[table][field])]
-                elif 'min' in ele:
-                    output[table][field] = [min(output[table][field])]
-                elif 'avg' in ele:
-                    output[table][field] = [float(sum(output[table][field]))/len(output[table][field])]
-                elif 'sum' in ele:
-                    output[table][field] = [sum(output[table][field])]
-                else:
+        if not ele=='*':            
+            field = ele.split('(')[-1].split(')')[0]
+            for table in tables:
+                if field in output[table]:
+                    if 'max' in ele:
+                        output[table][field] = [max(output[table][field])]
+                    elif 'min' in ele:
+                        output[table][field] = [min(output[table][field])]
+                    elif 'avg' in ele:
+                        output[table][field] = [float(sum(output[table][field]))/len(output[table][field])]
+                    elif 'sum' in ele:
+                        output[table][field] = [sum(output[table][field])]
+                    elif 'count' in ele:
+                        output[table][field] = [len(output[table][field])]
                     del_fields = output[table].keys()
                     for del_f in del_fields:
                         if del_f != field:
                             output[table].pop(del_f, None)
-            else:
-                output.pop(table, None)                                 
+                else:
+                    output.pop(table, None)
+    else:
+        for table in tables:
+            del_fields = output[table].keys()
+            for del_f in del_fields:
+                if del_f not in select:
+                    output[table].pop(del_f, None)
             
-        return output
+    return output
 
 def startEngine(database):
     """
