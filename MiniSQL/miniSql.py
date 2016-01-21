@@ -88,10 +88,10 @@ def parseQuery(query):
     select = [x.strip() for x in tokens[1].split(',')]
     tables = [x.strip() for x in tokens[3].split(',')]
     conditions = [x.strip().split(';')[0] for x in '='.join([x.strip() for x in tokens[-1].split('=')]).split(' ')[1:]]
-    print "select", select
-    print "tables", tables
-    print "conditions", conditions
-    return tokens
+    print colored("Select",'green'), select
+    print colored("Tables",'green'), tables
+    print colored("Conditions",'green'), conditions
+    return select, tables, conditions
 
 def startEngine():
     """
@@ -100,8 +100,7 @@ def startEngine():
     print colored("MiniSQL>",'cyan'),
     query = raw_input()
     while query!='q':
-        tokens = parseQuery(query)
-        print tokens
+        select, tables, conditions = parseQuery(query)
  
         # Take next query.
         print colored("MiniSQL>",'cyan'),
