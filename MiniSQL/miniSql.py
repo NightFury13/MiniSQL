@@ -11,6 +11,7 @@ from termcolor import colored, cprint
 import json
 import csv
 import sqlparse
+import copy
 
 def fetchFiles(path):
     """
@@ -72,7 +73,12 @@ def loadDatabases(path, data_files):
                         header, contents = table_content[0], table_content[1:]
                         for row in contents:
                             for col in meta_tables[t_name]:
-                                meta_tables[t_name][col].append(int(row[header.index(col)]))
+                                try:
+                                    meta_tables[t_name][col].append(int(row[header.index(col)]))
+                                except:
+                                    print colored("[ERROR]",'red'),"loading value %s failed, must be integer. Storing NULL instead" % str(row[header.index(col)])
+                                    meta_tables[t_name][col].append("NULL")
+
             print colored("\n[INFO]",'green'),"Loading data values complete.\n"
             return meta_tables
         except:
@@ -84,27 +90,127 @@ def parseQuery(query):
     Parse the query and return the tokens of query.
     """
     tokens = filter(None, [str(x).strip() for x in sqlparse.parse(query)[0].tokens])
-
+    if ";" in tokens:
+        tokens.remove(";")
+    
+    select = []
+    tables = []
+    conditions = []
+    if len(tokens) < 4:
+        print colored("[ERROR]",'red',"Invalid query! FROM & SELECT parameters are mandatory")
+        return "error"
+    elif len(tokens) > 4:
+        delim = ''
+        if '=' in tokens[-1]:
+            delim = '='
+        elif '<' in tokens[-1]:
+            delim = '='
+        elif '>' in tokens[-1]:
+            delim = '='
+        else:
+            print colored("[ERROR]",'red'),"Invalid operator! Only =,>,< are supported."
+            return "error"
+        conditions = [x.strip().split(';')[0] for x in '='.join([x.strip() for x in tokens[-1].split('=')]).split(' ')[1:]]
+        
     select = [x.strip() for x in tokens[1].split(',')]
     tables = [x.strip() for x in tokens[3].split(',')]
-    conditions = [x.strip().split(';')[0] for x in '='.join([x.strip() for x in tokens[-1].split('=')]).split(' ')[1:]]
+
     print colored("Select",'green'), select
     print colored("Tables",'green'), tables
     print colored("Conditions",'green'), conditions
+    
     return select, tables, conditions
 
-def startEngine():
+def computeQuery(select, tables, conditions, database):
+    """
+    Calculate the query output.
+    """
+    output = copy.deepcopy(database)
+    out_tables = output.keys()
+    for table in out_tables:
+        if table not in tables:
+            output.pop(table, None)
+    if len(conditions)==1:
+        cond = conditions[0]
+        delim = ''
+        if '=' in cond:
+            field, value = cond.split('=')
+            delim = '='
+        elif '>' in cond:
+            field, value = cond.split('>')
+            delim = '>'
+        elif '<' in cond:
+            field, value = cond.split('<')
+            delim = '<'
+        else:
+            print colored("[ERROR]",'red'),"Invalid operator! Only =,>,< are supported."
+            return "error"
+
+        try:
+            value = int(value)
+        except:
+            print colored("[ERROR]",'red'),'Values can only be integers! Not %s.' % str(value) 
+            return
+        for table in tables:
+            if field in output[table]:
+                del_field = []
+                for i in range(len(output[table][field])):
+                    if delim=='=':
+                        if output[table][field][i] != value:
+                            del_field.append(i)
+                    elif delim=='>':
+                        if output[table][field][i] <= value:
+                            del_field.append(i)
+                    elif delim=='<':
+                        if output[table][field][i] >= value:
+                            del_field.append(i)
+                for i in sorted(del_field, reverse=True):
+                    for field_del in output[table]:
+                        output[table][field_del].remove(output[table][field_del][i])
+        
+    if len(select)==1:
+        ele = select[0]
+        field = ele.split('(')[-1].split(')')[0]
+        for table in tables:
+            if field in output[table]:
+                if 'max' in ele:
+                    output[table][field] = [max(output[table][field])]
+                elif 'min' in ele:
+                    output[table][field] = [min(output[table][field])]
+                elif 'avg' in ele:
+                    output[table][field] = [float(sum(output[table][field]))/len(output[table][field])]
+                elif 'sum' in ele:
+                    output[table][field] = [sum(output[table][field])]
+                else:
+                    del_fields = output[table].keys()
+                    for del_f in del_fields:
+                        if del_f != field:
+                            output[table].pop(del_f, None)
+            else:
+                output.pop(table, None)                                 
+            
+        return output
+
+def startEngine(database):
     """
     Main controller function for taking query inputs and displaying respective outputs.
     """
     print colored("MiniSQL>",'cyan'),
     query = raw_input()
     while query!='q':
-        select, tables, conditions = parseQuery(query)
- 
+        #try:
+            select, tables, conditions = parseQuery(query)
+            output = computeQuery(select, tables, conditions, database) 
+            if output == 'error':
+                print colored("Retry with supported operators?",'yellow')
+            else:
+                print output
+        #except:
+        #    print colored("Retry with supported operators?",'yellow')
+
         # Take next query.
-        print colored("MiniSQL>",'cyan'),
-        query = raw_input()
+            print colored("MiniSQL>",'cyan'),
+            query = raw_input()
 
     print colored("Thanks for using MiniSQL. Exiting Now...",'yellow')
 
@@ -128,8 +234,9 @@ def main():
     print colored("           Welcome to the MiniSQL Engine\n","yellow")
     print colored("~ Enter your query on the prompt",'yellow')
     print colored("~ q : Quit\n",'yellow')
+
     # Start the query engine.
-    startEngine()
+    startEngine(database)
 
 
 if __name__=='__main__':
