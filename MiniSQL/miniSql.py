@@ -12,6 +12,7 @@ import json
 import csv
 import sqlparse
 import copy
+from terminaltables import AsciiTable
 
 def fetchFiles(path):
     """
@@ -100,17 +101,25 @@ def parseQuery(query):
         print colored("[ERROR]",'red',"Invalid query! FROM & SELECT parameters are mandatory")
         return "error"
     elif len(tokens) > 4:
-        delim = ''
-        if '=' in tokens[-1]:
-            delim = '='
-        elif '<' in tokens[-1]:
-            delim = '='
-        elif '>' in tokens[-1]:
-            delim = '='
+        if ('and' in tokens[-1]) or ('AND' in tokens[-1]):
+            try:
+                conds = tokens[-1].split('and')
+            except:
+                conds = tokens[-1].split('AND')
         else:
-            print colored("[ERROR]",'red'),"Invalid operator! Only =,>,< are supported."
-            return "error"
-        conditions = [x.strip().split(';')[0] for x in '='.join([x.strip() for x in tokens[-1].split('=')]).split(' ')[1:]]
+            conds = [tokens[-1]]
+        for cond in conds:
+            delim = ''
+            if '=' in cond:
+                delim = '='
+            elif '<' in cond:
+                delim = '<'
+            elif '>' in cond:
+                delim = '>'
+            else:
+                print colored("[ERROR]",'red'),"Invalid operator! Only =,>,< are supported."
+                return "error"
+            conditions+=[x.strip().split(';')[0] for x in [delim.join([x.strip() for x in cond.split(delim)]).split(' ')[-1]]]
         
     select = [x.strip() for x in tokens[1].split(',')]
     tables = [x.strip() for x in tokens[3].split(',')]
@@ -170,7 +179,68 @@ def computeQuery(select, tables, conditions, database):
                     for i in sorted(del_field, reverse=True):
                         for field_del in output[table]:
                             output[table][field_del].remove(output[table][field_del][i])
-        
+    # OR type of queries                        
+    else:
+        delim1 = ''
+        delim2 = ''
+        cond1 = conditions[0]
+        cond2 = conditions[-1]
+        if '=' in cond1:
+            field1, value1 = cond1.split('=')
+            delim1 = '='
+        elif '>' in cond1:
+            field1, value1 = cond1.split('>')
+            delim1 = '>'
+        elif '<' in cond1:
+            field1, value1 = cond1.split('<')
+            delim1 = '<'
+        else:
+            print colored("[ERROR]",'red'),"Invalid operator! Only =,>,< are supported."
+            return "error"
+
+        if '=' in cond2:
+            field2, value2 = cond2.split('=')
+            delim2 = '='
+        elif '>' in cond2:
+            field2, value2 = cond2.split('>')
+            delim2 = '>'
+        elif '<' in cond2:
+            field2, value2 = cond2.split('<')
+            delim2 = '<'
+        else:
+            print colored("[ERROR]",'red'),"Invalid operator! Only =,>,< are supported."
+            return "error"
+        try:
+            value1 = int(value1)
+            value2 = int(value2)
+        except:
+            print colored("[ERROR]",'red'),'Values can only be integers! Not %s or %s.' % (str(value1), str(value2)) 
+           
+        for table in tables:
+            if (field1 in output[table]) or (field2 in output[table]): 
+                if (field1 in output[table]) and (field2 not in output[table]):
+                    field = field1
+                    value = value1
+                    delim = delim1
+                else:
+                    field = field2
+                    value = value2
+                    delim = delim2
+                del_field = []
+                for i in range(len(output[table][field])):
+                    if delim=='=':
+                        if output[table][field][i] != value:
+                            del_field.append(i)
+                    elif delim=='>':
+                        if output[table][field][i] <= value:
+                            del_field.append(i)
+                    elif delim=='<':
+                        if output[table][field][i] >= value:
+                            del_field.append(i)
+                for i in sorted(del_field, reverse=True):
+                    for field_del in output[table]:
+                        output[table][field_del].remove(output[table][field_del][i])
+            
     if len(select)==1:
         ele = select[0]
         if not ele=='*':            
@@ -187,6 +257,8 @@ def computeQuery(select, tables, conditions, database):
                         output[table][field] = [sum(output[table][field])]
                     elif 'count' in ele:
                         output[table][field] = [len(output[table][field])]
+                    elif 'distinct' in ele:
+                        output[table][field] = [list(set(output[table][field]))]
                     del_fields = output[table].keys()
                     for del_f in del_fields:
                         if del_f != field:
@@ -209,20 +281,29 @@ def startEngine(database):
     print colored("MiniSQL>",'cyan'),
     query = raw_input()
     while query!='q':
-        #try:
+        try:
             select, tables, conditions = parseQuery(query)
             output = computeQuery(select, tables, conditions, database) 
             if output == 'error':
-                print colored("Retry with supported operators?",'yellow')
+                print colored("Retry with supported operations?",'yellow')
             else:
-                print output
-        #except:
-        #    print colored("Retry with supported operators?",'yellow')
+                table_data = []
+                for table in output:
+                    table_data.append(sorted(output[table].keys()))
+                    for i in range(len(output[table][output[table].keys()[0]])):
+                        row = []
+                        for col in output[table]:
+                            row.append(str(output[table][col][i]))
+                        table_data.append(row)
+                table = AsciiTable(table_data,' '.join(output.keys()))
+                print ""
+                print table.table
+        except:
+            print colored("Retry with supported operators?",'yellow')
 
         # Take next query.
-            print colored("MiniSQL>",'cyan'),
-            query = raw_input()
-
+        print colored("MiniSQL>",'cyan'),
+        query = raw_input()
     print colored("Thanks for using MiniSQL. Exiting Now...",'yellow')
 
 def main():
