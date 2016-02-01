@@ -119,6 +119,20 @@ def parseQuery(query):
         print colored("To Do",'green'), conditions
         return select, tables, conditions
 
+    if ('insert' in tokens) or ('INSERT' in tokens):
+        table = tokens[-2]
+        values = [x.strip() for x in tokens[-1].split(',')]
+        print colored("Table",'green'), table
+        print colored("Values",'green'), values
+        return ['insert'], table, values
+
+    if ('delete' in tokens) or ('DELETE' in tokens):
+        table = tokens[2]
+        condition = tokens[-1].split('where')[1].strip().split(';')[0].strip()
+        print colored("Table",'green'), table
+        print colored("Condition",'green'), condition
+        return ['delete'], [table], condition
+
     if len(tokens) < 4:
         print colored("[ERROR]",'red'),"Invalid query! FROM & SELECT parameters are mandatory"
         return "error"
@@ -156,22 +170,38 @@ def computeQuery(select, tables, conditions, database):
     """
     Calculate the query output.
     """
+    global database_path
     output = copy.deepcopy(database)
     if 'create_table' in conditions:
-        global database_path
         table_name = select[0]
         if table_name+'.csv' not in os.listdir(database_path):
             with open(database_path+'/metadata.txt','a') as f:
-                f.write('\n')
                 f.write('<begin_table>\n%s\n'%table_name)
                 for col in tables:
                     f.write('%s\n'%col)
-                f.write('<end_table>')
-            open(database_path+'/'+table_name+'.csv','w').close()
+                f.write('<end_table>\n')
+            with open(database_path+'/'+table_name+'.csv','w') as f:
+                for col in tables[:-1]:
+                    f.write(col+',')
+                f.write(tables[-1])
             print colored("[DONE]",'yellow'),"New Table %s created with columns : %s" % (table_name,','.join(tables))
             return "table_created"
         else:
             print colored("[ERROR]",'red'),"Table with name %s already exists!" % table_name
+            return "error"
+
+    if 'insert' in select:
+        table_name = tables
+        values = conditions
+        if table_name+'.csv' in os.listdir(database_path):
+            with open(database_path+'/'+table_name+'.csv','a') as f:
+                f.write('\n')
+                for val in values[:-1]:
+                    f.write(val+',')
+                f.write(values[-1])
+            return "data_inserted"
+        else:
+            print colored("[ERROR]",'red'),"Unsupported value format!"
             return "error"
 
     out_tables = output.keys()
@@ -179,6 +209,38 @@ def computeQuery(select, tables, conditions, database):
         if table not in tables:
             output.pop(table, None)
     
+    if 'delete' in select:
+        table_name = tables[0]
+        delim = ''
+        if '=' in conditions:
+            delim = '='
+        elif '>' in conditions:
+            delim = '>'
+        elif '<' in conditions:
+            delim = '<'
+        else:
+            print colored("[ERROR]",'red'),"Invalid operator! Only =,>,< are supported."
+            return "error"
+        col, val = [x.strip() for x in conditions.split(delim)]
+        print col, val
+        try:
+            del_idx = output[table_name][col].index(int(val))
+            for col in output[table_name]:
+                del_ele = output[table_name][col].pop(del_idx)
+            with open(database_path+'/'+table_name+'.csv','w') as f:
+                cols = sorted(output[table_name].keys())
+                for col in cols[:-1]:
+                    f.write(col+',')
+                f.write(cols[-1]+'\n')
+                for i in range(len(output[table_name][cols[0]])):
+                    for col in cols[:-1]:
+                        f.write(str(output[table_name][col][i])+',')
+                    f.write(str(output[table_name][cols[-1]][i])+'\n')
+            return "data_deleted"
+        except:
+            print colored("[ERROR]",'red'),"No matching data-entry found!"
+            return "error"
+
     if ('or' not in conditions) and ('OR' not in conditions):
         for cond in conditions:
             if cond=='AND' or cond=='and':
@@ -321,12 +383,25 @@ def startEngine(database):
     query = raw_input()
     while query!='q':
         try:
+            if query.split(';')[0].lower()=='rebase data':
+                global database_path
+                path, data_files = fetchFiles(database_path)
+                database = loadDatabases(path, data_files)
+                if database=="error":
+                    print colored("[ERROR]",'red'), "Database corrupted! Manually edit data to verify."
+                    query='q'
+                    continue
+                print colored("MiniSQL>",'cyan'),
+                query = raw_input()
+                continue
+
             select, tables, conditions = parseQuery(query)
             output = computeQuery(select, tables, conditions, database) 
             if output == 'error':
                 print colored("Retry with supported operations?",'yellow')
-            elif output == 'table_created':
-                pass
+            elif output == 'table_created' or output == 'data_inserted' or output == 'data_deleted':
+                query = 'rebase data'
+                continue
             # Print output in pretty table format.
             else:
                 table_data = []
@@ -335,7 +410,7 @@ def startEngine(database):
                     #table_data[0]+=[table+'.'+x for x in sorted(output[table].keys())]
                     for i in range(len(output[table][output[table].keys()[0]])):
                         row = []
-                        for col in output[table]:
+                        for col in sorted(output[table].keys()):
                             row.append(str(output[table][col][i]))
                         table_data.append(row)
                     table_data.append([])
@@ -371,6 +446,7 @@ def main():
 
     print colored("           Welcome to the MiniSQL Engine\n","yellow")
     print colored("~ Enter your query on the prompt",'yellow')
+    print colored("~ rebase data : Use after every database addition/deletion",'yellow')
     print colored("~ q : Quit\n",'yellow')
 
     # Start the query engine.
