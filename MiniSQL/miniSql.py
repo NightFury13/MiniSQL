@@ -14,6 +14,9 @@ import sqlparse
 import copy
 from terminaltables import AsciiTable
 
+# Global Variables
+database_path = ''
+
 def fetchFiles(path):
     """
     Check if path provided exists. If so, load the data files.
@@ -71,7 +74,12 @@ def loadDatabases(path, data_files):
                     with open(path+'/'+table_f,'r') as tab_f:
                         t_name = table_f.split('.')[0]
                         table_content = [row for row in csv.reader(tab_f, delimiter=',',skipinitialspace=True)]
-                        header, contents = table_content[0], table_content[1:]
+                        try:
+                            header, contents = table_content[0], table_content[1:]
+                        except:
+                            print colored("[INFO]",'red'),table_f, "database is empty."
+                            header = []
+                            contents = []
                         for row in contents:
                             for col in meta_tables[t_name]:
                                 try:
@@ -90,15 +98,29 @@ def parseQuery(query):
     """
     Parse the query and return the tokens of query.
     """
+    select = []
+    tables = []
+    conditions = []
+    
     tokens = filter(None, [str(x).strip() for x in sqlparse.parse(query)[0].tokens])
     if ";" in tokens:
         tokens.remove(";")
     
-    select = []
-    tables = []
-    conditions = []
+    if ('create' in tokens) or ('CREATE' in tokens):
+        tokens = tokens[-1]
+        tokens = tokens.split('(')
+        table_name = tokens[0].strip()
+        table_cols = [x.strip() for x in tokens[1].split(')')[0].split(',')]
+        select.append(table_name)
+        tables+=table_cols
+        conditions.append('create_table')
+        print colored("Table",'green'), select
+        print colored("Columns",'green'), tables
+        print colored("To Do",'green'), conditions
+        return select, tables, conditions
+
     if len(tokens) < 4:
-        print colored("[ERROR]",'red',"Invalid query! FROM & SELECT parameters are mandatory")
+        print colored("[ERROR]",'red'),"Invalid query! FROM & SELECT parameters are mandatory"
         return "error"
     elif len(tokens) > 4:
         if ('and' in tokens[-1]) or ('AND' in tokens[-1]):
@@ -135,6 +157,23 @@ def computeQuery(select, tables, conditions, database):
     Calculate the query output.
     """
     output = copy.deepcopy(database)
+    if 'create_table' in conditions:
+        global database_path
+        table_name = select[0]
+        if table_name+'.csv' not in os.listdir(database_path):
+            with open(database_path+'/metadata.txt','a') as f:
+                f.write('\n')
+                f.write('<begin_table>\n%s\n'%table_name)
+                for col in tables:
+                    f.write('%s\n'%col)
+                f.write('<end_table>')
+            open(database_path+'/'+table_name+'.csv','w').close()
+            print colored("[DONE]",'yellow'),"New Table %s created with columns : %s" % (table_name,','.join(tables))
+            return "table_created"
+        else:
+            print colored("[ERROR]",'red'),"Table with name %s already exists!" % table_name
+            return "error"
+
     out_tables = output.keys()
     for table in out_tables:
         if table not in tables:
@@ -286,15 +325,20 @@ def startEngine(database):
             output = computeQuery(select, tables, conditions, database) 
             if output == 'error':
                 print colored("Retry with supported operations?",'yellow')
+            elif output == 'table_created':
+                pass
+            # Print output in pretty table format.
             else:
                 table_data = []
                 for table in output:
-                    table_data.append(sorted(output[table].keys()))
+                    table_data.append([table+'.'+x for x in sorted(output[table].keys())])
+                    #table_data[0]+=[table+'.'+x for x in sorted(output[table].keys())]
                     for i in range(len(output[table][output[table].keys()[0]])):
                         row = []
                         for col in output[table]:
                             row.append(str(output[table][col][i]))
                         table_data.append(row)
+                    table_data.append([])
                 table = AsciiTable(table_data,' '.join(output.keys()))
                 print ""
                 print table.table
@@ -316,6 +360,8 @@ def main():
     # Initialze Database.
     print "Please enter path to the database files :",
     path = raw_input()
+    global database_path
+    database_path = path
     path, data_files = fetchFiles(path)
     database = loadDatabases(path, data_files)
     if database=="error":
