@@ -133,6 +133,18 @@ def parseQuery(query):
         print colored("Condition",'green'), condition
         return ['delete'], [table], condition
 
+    if ('truncate' in tokens) or ('TRUNCATE' in tokens):
+        table = tokens[2]
+        print colored("Table",'green'), table
+        print colored("To Do",'green'),'Delete records'
+        return ['truncate'], [table], []
+
+    if ('drop' in tokens) or ('DROP' in tokens):
+        table = tokens[-1]
+        print colored("Table",'green'), table
+        print colored("To Do",'green'), 'Drop Table'
+        return ['drop'], [table], []
+
     if len(tokens) < 4:
         print colored("[ERROR]",'red'),"Invalid query! FROM & SELECT parameters are mandatory"
         return "error"
@@ -195,13 +207,33 @@ def computeQuery(select, tables, conditions, database):
         values = conditions
         if table_name+'.csv' in os.listdir(database_path):
             with open(database_path+'/'+table_name+'.csv','a') as f:
-                f.write('\n')
                 for val in values[:-1]:
                     f.write(val+',')
-                f.write(values[-1])
+                f.write(values[-1]+'\n')
             return "data_inserted"
         else:
             print colored("[ERROR]",'red'),"Unsupported value format!"
+            return "error"
+
+    if 'drop' in select:
+        table = tables[0]
+        if output[table][output[table].keys()[0]]:
+            try:
+                os.remove(database_path+'/'+table+'.csv')
+                with open(database_path+'/metadata.txt','w') as f:
+                    for tab in output:
+                        if not tab==table:
+                            f.write('<begin_table>\n')
+                            f.write(tab+'\n')
+                            for col in sorted(output[tab].keys()):
+                                f.write(col+'\n')
+                            f.write('<end_table>\n')
+                return "table_dropped"
+            except:
+                print colored("[ERROR]",'red'),"Failed to remove table!"
+                return "error"
+        else:
+            print colored("[ERROR]",'red'),'Table not empty! Try truncating first...'
             return "error"
 
     out_tables = output.keys()
@@ -240,6 +272,20 @@ def computeQuery(select, tables, conditions, database):
         except:
             print colored("[ERROR]",'red'),"No matching data-entry found!"
             return "error"
+
+    if 'truncate' in select:
+        table = tables[0]
+        try:
+            with open(database_path+'/'+table+'.csv','w') as f:
+                cols = sorted(output[table].keys())
+                for col in cols[:-1]:
+                    f.write(col+',')
+                f.write(cols[-1]+'\n')
+            return "data_truncated"
+        except:
+            print colored("[ERROR]",'red'), "No matching table found!"
+            return "error"
+
 
     if ('or' not in conditions) and ('OR' not in conditions):
         for cond in conditions:
@@ -399,7 +445,7 @@ def startEngine(database):
             output = computeQuery(select, tables, conditions, database) 
             if output == 'error':
                 print colored("Retry with supported operations?",'yellow')
-            elif output == 'table_created' or output == 'data_inserted' or output == 'data_deleted':
+            elif output in ['table_created','data_inserted','data_deleted','data_truncated','table_dropped']:
                 query = 'rebase data'
                 continue
             # Print output in pretty table format.
