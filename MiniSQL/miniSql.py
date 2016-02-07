@@ -120,7 +120,7 @@ def parseQuery(query):
         return select, tables, conditions
 
     if ('insert' in tokens) or ('INSERT' in tokens):
-        table = tokens[-2]
+        table = tokens[2]
         values = [x.strip() for x in tokens[-1].split(',')]
         print colored("Table",'green'), table
         print colored("Values",'green'), values
@@ -195,7 +195,7 @@ def computeQuery(select, tables, conditions, database):
             with open(database_path+'/'+table_name+'.csv','w') as f:
                 for col in tables[:-1]:
                     f.write(col+',')
-                f.write(tables[-1])
+                f.write(tables[-1]+'\n')
             print colored("[DONE]",'yellow'),"New Table %s created with columns : %s" % (table_name,','.join(tables))
             return "table_created"
         else:
@@ -205,6 +205,9 @@ def computeQuery(select, tables, conditions, database):
     if 'insert' in select:
         table_name = tables
         values = conditions
+        if len(conditions) != len(output[table_name].keys()):
+            print colored("ERROR",'red'), "Unequal number of values to insert! Expected %s"%(str(len(output[table_name].keys())))
+            return "error"
         if table_name+'.csv' in os.listdir(database_path):
             with open(database_path+'/'+table_name+'.csv','a') as f:
                 for val in values[:-1]:
@@ -217,7 +220,7 @@ def computeQuery(select, tables, conditions, database):
 
     if 'drop' in select:
         table = tables[0]
-        if output[table][output[table].keys()[0]]:
+        if not output[table][output[table].keys()[0]]:
             try:
                 os.remove(database_path+'/'+table+'.csv')
                 with open(database_path+'/metadata.txt','w') as f:
@@ -234,6 +237,7 @@ def computeQuery(select, tables, conditions, database):
                 return "error"
         else:
             print colored("[ERROR]",'red'),'Table not empty! Try truncating first...'
+            print "Contents :", output[table][output[table].keys()[0]] 
             return "error"
 
     out_tables = output.keys()
@@ -406,6 +410,9 @@ def computeQuery(select, tables, conditions, database):
                         output[table][field] = [len(output[table][field])]
                     elif 'distinct' in ele:
                         output[table][field] = [list(set(output[table][field]))]
+                    elif ('(' in ele):
+                        output = []
+                        return output
                     del_fields = output[table].keys()
                     for del_f in del_fields:
                         if del_f != field:
@@ -448,6 +455,8 @@ def startEngine(database):
             elif output in ['table_created','data_inserted','data_deleted','data_truncated','table_dropped']:
                 query = 'rebase data'
                 continue
+            elif not output:
+                print colored("ERROR",'red'), "Incorrect operations asked for! No output plausible. Retry?"
             # Print output in pretty table format.
             else:
                 table_data = []
